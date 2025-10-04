@@ -1,8 +1,10 @@
 import os
 import json
+import base64
 from http.server import BaseHTTPRequestHandler
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
+from io import BytesIO
 
 # Configuration
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -22,10 +24,8 @@ NOTES_DB_ID = os.environ.get("NOTES_DB_ID", "")
 IDEAS_DB_ID = os.environ.get("IDEAS_DB_ID", "")
 CLIENTS_DB_ID = os.environ.get("CLIENTS_DB_ID", "")
 
-# Google Drive
 GOOGLE_DRIVE_MAIN_FOLDER = os.environ.get("GOOGLE_DRIVE_MAIN_FOLDER", "")
 
-# Conversation history
 conversation_history = {}
 
 SYSTEM_PROMPT = """Eres El Rey de las Páginas Bot, un asistente personal inteligente.
@@ -49,15 +49,56 @@ def send_telegram_message(chat_id, text):
         print(f"Error: {e}")
         return None
 
-def send_telegram_photo(chat_id, photo_url, caption=""):
+def send_telegram_photo_base64(chat_id, b64_image, caption=""):
+    """Envía foto desde base64 a Telegram usando multipart/form-data"""
+    import urllib.parse
+    
+    # Decodificar base64 a bytes
+    image_bytes = base64.b64decode(b64_image)
+    
+    # Crear boundary para multipart
+    boundary = '----WebKitFormBoundary' + ''.join([str(i) for i in range(16)])
+    
+    # Construir body multipart
+    body_parts = []
+    
+    # chat_id
+    body_parts.append(f'--{boundary}')
+    body_parts.append('Content-Disposition: form-data; name="chat_id"')
+    body_parts.append('')
+    body_parts.append(str(chat_id))
+    
+    # caption
+    if caption:
+        body_parts.append(f'--{boundary}')
+        body_parts.append('Content-Disposition: form-data; name="caption"')
+        body_parts.append('')
+        body_parts.append(caption)
+    
+    # photo file
+    body_parts.append(f'--{boundary}')
+    body_parts.append('Content-Disposition: form-data; name="photo"; filename="image.png"')
+    body_parts.append('Content-Type: image/png')
+    body_parts.append('')
+    
+    # Combinar partes de texto
+    text_body = '\r\n'.join(body_parts) + '\r\n'
+    
+    # Crear body completo
+    body = text_body.encode('utf-8') + image_bytes + f'\r\n--{boundary}--\r\n'.encode('utf-8')
+    
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
-    data = {"chat_id": chat_id, "photo": photo_url, "caption": caption}
-    req = Request(url, data=json.dumps(data).encode(), headers={"Content-Type": "application/json"})
+    
+    req = Request(url, data=body, headers={
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+        "Content-Length": str(len(body))
+    })
+    
     try:
-        with urlopen(req, timeout=15) as response:
+        with urlopen(req, timeout=30) as response:
             return json.loads(response.read())
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error enviando foto: {e}")
         return None
 
 def call_azure_gpt(messages, user_id):
@@ -81,19 +122,15 @@ def call_azure_gpt(messages, user_id):
         return f"Error: {str(e)}"
 
 def generate_image_flux(prompt):
+    """Genera imagen con FLUX y devuelve base64"""
     url = f"{FLUX_ENDPOINT}/openai/deployments/{FLUX_DEPLOYMENT}/images/generations?api-version=2025-04-01-preview"
-    payload = {
-        "prompt": prompt,
-        "n": 1,
-        "size": "1024x1024",
-        "response_format": "url"
-    }
+    payload = {"prompt": prompt, "n": 1, "size": "1024x1024"}
     req = Request(url, data=json.dumps(payload).encode(), headers={"Content-Type": "application/json", "api-key": FLUX_API_KEY})
     try:
         with urlopen(req, timeout=60) as response:
             result = json.loads(response.read())
             if "data" in result and len(result["data"]) > 0:
-                return result["data"][0].get("url", None)
+                return result["data"][0].get("b64_json", None)
             return None
     except Exception as e:
         print(f"Error: {e}")
@@ -156,44 +193,39 @@ def handle_command(command, chat_id, user_id, args=""):
         if not args:
             return "❌ Uso: /task [descripción]"
         result = save_to_notion(args, "task")
-        if result:
-            return f"✅ Tarea guardada:\n📋 {args}"
-        return f"⚠️ Tarea registrada:\n📋 {args}"
+        return f"✅ Tarea guardada:\n📋 {args}" if result else f"⚠️ Tarea registrada:\n📋 {args}"
     
     elif command == "/note":
         if not args:
             return "❌ Uso: /note [tu nota]"
         result = save_to_notion(args, "note")
-        if result:
-            return f"✅ Nota guardada:\n📝 {args}"
-        return f"⚠️ Nota registrada:\n📝 {args}"
+        return f"✅ Nota guardada:\n📝 {args}" if result else f"⚠️ Nota registrada:\n📝 {args}"
     
     elif command == "/idea":
         if not args:
             return "❌ Uso: /idea [tu idea]"
         result = save_to_notion(args, "idea")
-        if result:
-            return f"✅ Idea guardada:\n💡 {args}"
-        return f"⚠️ Idea registrada:\n💡 {args}"
+        return f"✅ Idea guardada:\n💡 {args}" if result else f"⚠️ Idea registrada:\n💡 {args}"
     
     elif command == "/client":
         if not args:
             return "❌ Uso: /client [nombre y contacto]"
         result = save_to_notion(args, "client")
-        if result:
-            return f"✅ Cliente guardado:\n👤 {args}"
-        return f"⚠️ Cliente registrado:\n👤 {args}"
+        return f"✅ Cliente guardado:\n👤 {args}" if result else f"⚠️ Cliente registrado:\n👤 {args}"
     
     elif command == "/image":
         if not args:
             return "❌ Uso: /image [descripción]"
         send_telegram_message(chat_id, "🎨 Generando imagen con FLUX...\n⏳ 15-30 seg.")
-        image_url = generate_image_flux(args)
-        if image_url:
-            send_telegram_photo(chat_id, image_url, f"🎨 {args[:50]}...")
-            return None
+        b64_image = generate_image_flux(args)
+        if b64_image:
+            result = send_telegram_photo_base64(chat_id, b64_image, f"🎨 {args[:50]}...")
+            if result:
+                return None
+            else:
+                return "⚠️ Imagen generada pero error al enviar. Intenta de nuevo."
         else:
-            return "❌ Error. Intenta otra descripción."
+            return "❌ Error generando imagen. Intenta otra descripción."
     return None
 
 class handler(BaseHTTPRequestHandler):
