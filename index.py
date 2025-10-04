@@ -506,8 +506,6 @@ def call_azure_gpt(messages, user_id, context=""):
         })
     
     if user_id in conversation_history:
-        full_messages.extend(conversation_history[user_id][-10](streamdown:incomplete-link)
-if user_id in conversation_history:
         full_messages.extend(conversation_history[user_id][-10:])
     full_messages.extend(messages)
     
@@ -530,7 +528,6 @@ if user_id in conversation_history:
             return assistant_message
     except Exception as e:
         return f"Error: {str(e)}"
-
 # ============================================================================
 # FLUX IMAGE GENERATION
 # ============================================================================
