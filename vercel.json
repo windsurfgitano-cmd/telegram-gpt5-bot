@@ -1,12 +1,15 @@
 {
   "version": 2,
-  "builds": [{
-    "src": "index.py",
-    "use": "@vercel/python"
-  }],
-  "buildCommand": "yum install -y ffmpeg || apt-get update && apt-get install -y ffmpeg",
-  "routes": [{
-    "src": "/(.*)",
-    "dest": "index.py"
-  }]
+  "builds": [
+    {
+      "src": "index.py",
+      "use": "@gercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "index.py"
+    }
+  ]
 }
