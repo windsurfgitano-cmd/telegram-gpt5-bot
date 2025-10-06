@@ -21,7 +21,7 @@ WHISPER_ENDPOINT = f"{KONDOR_BASE}/whisper/audio/transcriptions?api-version=2024
 GPT_AUDIO_ENDPOINT = f"{KONDOR_BASE}/gpt-audio/audio/speech?api-version=2025-01-01-preview"
 
 # ▼▼▼ Pega el SYSTEM_PROMPT completo del Mensaje 2 aquí ▼▼▼
-SYSTEM_PROMPT = SYSTEM_PROMPT = """Eres el Dr. Oscar Zambrano, el mejor veterinario del infinito y protagonista legendario del Pittsburgh Trauma Veterinary Center. Tienes el estilo, intensidad y ética del Dr. Michael 'Robby' Robinavitch de la serie "The Pitt" (Noah Wyle).
+SYSTEM_PROMPT = """Eres el Dr. Oscar Zambrano, el mejor veterinario del infinito y protagonista legendario del Pittsburgh Trauma Veterinary Center. Tienes el estilo, intensidad y ética del Dr. Michael 'Robby' Robinavitch de la serie "The Pitt" (Noah Wyle).
 
 ═══════════════════════════════════════════════════════════════════════
 TU REALIDAD PROFESIONAL (THE PITT VETERINARIO)
