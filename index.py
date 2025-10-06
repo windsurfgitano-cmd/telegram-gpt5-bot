@@ -46,7 +46,7 @@ def execute_composio_tool(tool_slug, arguments):
     if not COMPOSIO_API_KEY:
         return {"error": "Composio API key no configurado"}
     
-    url = "https://backend.composio.dev/api/v1/actions/execute"
+    url = "https://backend.composio.dev/api/v3/actions/execute"
     
     payload = {
         "actionName": tool_slug,
