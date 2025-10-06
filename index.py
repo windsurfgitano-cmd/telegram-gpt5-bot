@@ -152,7 +152,7 @@ def execute_detected_tool(tool_info):
     # ========================================================================
     if app == "gmail":
         if "send" in action or action == "send_email":
-            return execute_composio_tool("GMAIL_SEND_EMAIL", {
+            return execute_composio_tool("GMAIL_SEND_MESSAGE", {
                 "to": params.get("to", params.get("destinatario", "")),
                 "subject": params.get("subject", params.get("asunto", "")),
                 "body": params.get("body", params.get("mensaje", params.get("text", "")))
@@ -170,10 +170,10 @@ def execute_detected_tool(tool_info):
                 yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y/%m/%d")
                 query = f"after:{yesterday}"
             
-            return execute_composio_tool("GMAIL_FETCH_EMAILS", {
+            return execute_composio_tool("GMAIL_LIST_MESSAGES", {
                 "maxResults": max_results,
                 "userId": "me",
-                "q": query
+                "query": query
             })
     
     # ========================================================================
@@ -559,7 +559,7 @@ Habla en lenguaje natural. Yo detecto y ejecuto las herramientas necesarias.
         header = parts[0].split(" ", 1)
         if len(header) < 2: return "❌ **Falta asunto.**"
         to, subject, body = header[0], header[1], parts[1]
-        result = execute_composio_tool("GMAIL_SEND_EMAIL", {"to": to, "subject": subject, "body": body})
+        result = execute_composio_tool("GMAIL_SEND_MESSAGE", {"to": to, "subject": subject, "body": body})
         if result.get("error"): return f"❌ **Error al enviar:** {result.get('error')}"
         return f"✅ **Email enviado a {to}**"
     
