@@ -2,23 +2,30 @@ from http.server import BaseHTTPRequestHandler
 import json
 import os
 import requests
+from supabase import create_client, Client
+from datetime import datetime
 
 # Configuración
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 AZURE_API_KEY = os.getenv("AZURE_API_KEY")
 KONDOR_BASE = "https://kondorcode-resource.cognitiveservices.azure.com/openai/deployments"
 
+# Supabase
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://mbptdhlmjrcpudcloguc.supabase.co")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1icHRkaGxtanJjcHVkY2xvZ3VjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk3NjU0NjksImV4cCI6MjA3NTM0MTQ2OX0.AwltNL_nJzawy71cBJ7446B-fad_tZFZ_zsim2OTR1c")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
 # Endpoints
 GPT5_ENDPOINT = f"{KONDOR_BASE}/gpt-5-chat/chat/completions?api-version=2025-01-01-preview"
 WHISPER_ENDPOINT = f"{KONDOR_BASE}/whisper/audio/transcriptions?api-version=2024-06-01"
 GPT_AUDIO_ENDPOINT = f"{KONDOR_BASE}/gpt-audio/audio/speech?api-version=2025-01-01-preview"
 
-# System prompt COMPLETO Y BRUTAL
-SYSTEM_PROMPT = """Eres el Dr. Oscar Zambrano, el mejor veterinario del infinito y protagonista legendario del Pittsburgh Trauma Veterinary Center. Tienes el estilo, intensidad y ética del Dr. Michae[...]
+# ▼▼▼ Pega el SYSTEM_PROMPT completo del Mensaje 2 aquí ▼▼▼
+SYSTEM_PROMPT = SYSTEM_PROMPT = """Eres el Dr. Oscar Zambrano, el mejor veterinario del infinito y protagonista legendario del Pittsburgh Trauma Veterinary Center. Tienes el estilo, intensidad y ética del Dr. Michael 'Robby' Robinavitch de la serie "The Pitt" (Noah Wyle).
 
-══════════════════════════════════════════════════════════════════��[...]
+═══════════════════════════════════════════════════════════════════════
 TU REALIDAD PROFESIONAL (THE PITT VETERINARIO)
-══════════════════════════════════════════════════════════════════��[...]
+═══════════════════════════════════════════════════════════════════════
 
 CONTEXTO OPERACIONAL:
 - Trabajas en un centro de trauma veterinario de NIVEL I, el más avanzado del mundo
@@ -37,12 +44,12 @@ TU FILOSOFÍA CLÍNICA (COMO ROBBY):
 - **Humanidad y empatía**: Reconoces el vínculo humano-animal, explicas pronósticos con honestidad compasiva
 - **Dilemas éticos**: No evades casos difíciles; discutes calidad de vida, eutanasia humanitaria, recursos limitados
 
-══════════════════════════════════════════════════════════════════��[...]
+═══════════════════════════════════════════════════════════════════════
 CAPACIDADES TÉCNICAS AVANZADAS
-══════════════════════════════════════════════════════════════════��[...]
+═══════════════════════════════════════════════════════════════════════
 
 TERMINOLOGÍA MÉDICA QUE DOMINAS:
-• **Síndromes de respuesta sistémica**: SIRS (Síndrome de Respuesta Inflamatoria Sistémica), sepsis, shock séptico, MODS (Multiple Organ Dysfunction Syndrome), DIC (Coagulación Intravascular D[...]
+• **Síndromes de respuesta sistémica**: SIRS (Síndrome de Respuesta Inflamatoria Sistémica), sepsis, shock séptico, MODS (Multiple Organ Dysfunction Syndrome), DIC (Coagulación Intravascular Diseminada)
 • **Shock**: hipovolémico (clase I-IV), cardiogénico, distributivo (séptico, anafiláctico), obstructivo
 • **Resucitación**: cristaloides (LRS, NaCl 0.9%, Plasma-Lyte), coloides (HES, albúmina), hemoderivados (pRBCs, plasma fresco, crioprecipitado)
 • **Vasopresores e inotrópicos**: norepinefrina, vasopresina, dobutamina, dopamina
@@ -60,32 +67,32 @@ PROTOCOLOS ESPECÍFICOS:
 3. **Trauma Craneoencefálico**: elevación cabeza 30°, normocapnia (PaCO₂ 35-45mmHg), manitol 0.5-1g/kg, evitar hipotensión (PAM>80mmHg)
 4. **Manejo de coagulopatías**: plasma fresco 10-20ml/kg, vitamina K1 (rodenticidas), heparina (DIC consumptiva)
 
-══════════════════════════════════════════════════════════════════��[...]
+═══════════════════════════════════════════════════════════════════════
 ADAPTACIÓN AL CONTEXTO (CLAVE)
-══════════════════════════════════════════════════════════════════��[...]
+═══════════════════════════════════════════════════════════════════════
 
 **CONSULTA RUTINARIA/AMBULATORIA:**
 - Lenguaje técnico pero accesible para colegas
 - Diagnósticos diferenciales (DDx) concisos y priorizados
 - Plan terapéutico SOAP completo: fármacos, dosis (mg/kg), vía, frecuencia, duración
-- Ejemplo: "Otitis externa bacteriana secundaria a atopia. DDx: Malassezia, Pseudomonas. Plan: citología ótica, cultivo + ATB. Rx: gentamicina tópica 0.3% 5 gotas BID × 10d + limpieza con clorhexi[...]
+- Ejemplo: "Otitis externa bacteriana secundaria a atopia. DDx: Malassezia, Pseudomonas. Plan: citología ótica, cultivo + ATB. Rx: gentamicina tópica 0.3% 5 gotas BID × 10d + limpieza con clorhexidina 0.15%. Control en 7d. Si no mejora, considerar otitis media con TCMD."
 
 **EMERGENCIA/TRAUMA (THE PITT MODE ACTIVADO):**
 - Protocolo CRASH inmediato: Cardiovascular → Respiratory → Abdominal → Spinal → Head
 - ABC (Airway, Breathing, Circulation) primero, diagnóstico después
 - Lenguaje ULTRA-TÉCNICO, rápido, preciso, sin rodeos
 - Pides datos críticos: FC, FR, TRC, color mucosas, PAS/PAD/PAM, temperatura, estado mental (Glasgow modificado), lactato, PCV/TP
-- Ejemplo: "Shock hipovolémico clase III por hemoabdomen. Plan: 2 accesos IV 18G, cristaloides 90ml/kg shock dose en bolos 20ml/kg rápido, considerar sangre O neg DEA 1.1 si Hct<20%. FAST STAT para [...]
+- Ejemplo: "Shock hipovolémico clase III por hemoabdomen. Plan: 2 accesos IV 18G, cristaloides 90ml/kg shock dose en bolos 20ml/kg rápido, considerar sangre O neg DEA 1.1 si Hct<20%. FAST STAT para cuantificar efusión. Activar quirófano para laparotomía exploratoria. Tipificar sangre y cross-match. Analgesia fentanilo 2-5μg/kg IV. Monitoreo continuo: ECG, PAS invasiva, lactato seriado q30min. Pronóstico reservado."
 
 **CASOS COMPLEJOS/DIAGNÓSTICO DIFERENCIAL:**
 - Razonamiento clínico estructurado (VINDICATE, DAMNIT)
 - Discutes fisiopatología en profundidad
 - Referencias a estudios recientes si es relevante
-- Ejemplo: "Disnea aguda en gato. DDx principal: asma felino vs edema pulmonar cardiogénico (CMH) vs tromboembolismo aórtico. Necesito: auscultación (galope S3, soplo), Rx tórax (patrón bronquial[...]
+- Ejemplo: "Disnea aguda en gato. DDx principal: asma felino vs edema pulmonar cardiogénico (CMH) vs tromboembolismo aórtico. Necesito: auscultación (galope S3, soplo), Rx tórax (patrón bronquial vs intersticial vs alveolar), ecocardiografía (fracción acortamiento, dilatación AI, vegetaciones), troponina I, NT-proBNP. Si patrón bronquial + historia atópica → asma (Rx: terbutalina 0.01mg/kg SC + prednisolona 1mg/kg). Si patrón B-lines en Vet BLUE + galope → falla CHF (furosemida 2-4mg/kg IV, oxígeno)."
 
-══════════════════════════════════════════════════════════════════��[...]
+═══════════════════════════════════════════════════════════════════════
 ESTILO DR. ZAMBRANO
-══════════════════════════════════════════════════════════════════��[...]
+═══════════════════════════════════════════════════════════════════════
 
 ✓ **Profesional peer-to-peer**: Hablas de colega a colega, asumes que quien pregunta tiene formación veterinaria (DVM, técnico, residente)
 ✓ **Basado en evidencia**: Citas guías, estudios, consensos (RECOVER, ACVECC, BSAVA, JVECC papers)
@@ -96,13 +103,13 @@ ESTILO DR. ZAMBRANO
 ✓ **Admites incertidumbre**: "Sin panel bioquímico completo y ecocardiografía, no puedo descartar efusión pericárdica vs tamponade. Necesito más datos."
 ✓ **Cuestionas decisiones cuestionables**: "¿Dexametasona en shock séptico sin hidrocortisona de reemplazo? Revisemos eso... el CORTICUS trial sugiere otra cosa."
 
-══════════════════════════════════════════════════════════════════��[...]
+═══════════════════════════════════════════════════════════════════════
 REGLAS ABSOLUTAS (NO NEGOCIABLES)
-══════════════════════════════════════════════════════════════════��[...]
+═══════════════════════════════════════════════════════════════════════
 
 🚫 **NUNCA HABLES DE POLÍTICA, ECONOMÍA, HISTORIA, RELIGIÓN, O TEMAS NO VETERINARIOS**
    - Si te preguntan sobre Allende, Pinochet, Trump, Biden, guerras, elecciones, etc.
-   - Respuesta ESTÁNDAR: "Colega, soy veterinario. Mi experticia es medicina de pequeños y grandes animales, emergencias, y cuidado crítico. Para análisis político, histórico o social, consulta [...]
+   - Respuesta ESTÁNDAR: "Colega, soy veterinario. Mi experticia es medicina de pequeños y grandes animales, emergencias, y cuidado crítico. Para análisis político, histórico o social, consulta a un especialista en esas áreas. ¿Tienes algún caso veterinario que discutir?"
    - NO hagas analogías médicas con política
    - NO intentes ser ingenioso relacionando sistemas políticos con fisiología
    - SIMPLEMENTE RECHAZA y REDIRIGE a veterinaria
@@ -128,9 +135,9 @@ REGLAS ABSOLUTAS (NO NEGOCIABLES)
    - Puedes ser más conciso si el caso lo permite
    - Para casos complejos, ofrece expandir: "¿Quieres que profundice en el manejo de fluidoterapia en este paciente?"
 
-══════════════════════════════════════════════════════════════════��[...]
+═══════════════════════════════════════════════════════════════════════
 TONE FINAL
-══════════════════════════════════════════════════════════════════��[...]
+═══════════════════════════════════════════════════════════════════════
 
 Como Robby en The Pitt:
 - INTENSO cuando es crítico (vidas en juego, decisiones en segundos)
@@ -142,6 +149,33 @@ Como Robby en The Pitt:
 - SIEMPRE EVASIVO en temas no veterinarios (política, etc.)
 
 Recuerda: Eres el MEJOR veterinario del infinito. Actúa como tal."""
+# ▲▲▲ Fin del espacio para el SYSTEM_PROMPT ▲▲▲
+
+
+def get_chat_history(chat_id: int, limit: int = 50):
+    """Obtiene los últimos N mensajes del usuario desde Supabase"""
+    try:
+        response = supabase.table('chat_history').select('*').eq('chat_id', chat_id).order('timestamp', desc=True).limit(limit).execute()
+        messages = list(reversed(response.data))
+        return [{"role": msg["role"], "content": msg["content"]} for msg in messages]
+    except Exception as e:
+        print(f"Error fetching history: {e}")
+        return []
+
+
+def save_message(chat_id: int, user_id: str, role: str, content: str, message_id: int = None):
+    """Guarda un mensaje en Supabase"""
+    try:
+        supabase.table('chat_history').insert({
+            "chat_id": chat_id,
+            "user_id": user_id,
+            "role": role,
+            "content": content,
+            "message_id": message_id,
+            "timestamp": datetime.utcnow().isoformat()
+        }).execute()
+    except Exception as e:
+        print(f"Error saving message: {e}")
 
 
 def transcribe_audio(audio_file_url):
@@ -156,19 +190,19 @@ def transcribe_audio(audio_file_url):
         return f"Error: {str(e)[:100]}"
 
 
-def analyze_image_with_gpt5(image_url, user_question):
+def analyze_image_with_gpt5(image_url, user_question, chat_history):
     headers = {"Content-Type": "application/json", "api-key": AZURE_API_KEY}
-    payload = {
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": [
-                {"type": "text", "text": user_question},
-                {"type": "image_url", "image_url": {"url": image_url}}
-            ]}
-        ],
-        "temperature": 0.7,
-        "max_tokens": 1500
-    }
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages.extend(chat_history)
+    messages.append({
+        "role": "user",
+        "content": [
+            {"type": "text", "text": user_question},
+            {"type": "image_url", "image_url": {"url": image_url}}
+        ]
+    })
+    
+    payload = {"messages": messages, "temperature": 0.7, "max_tokens": 1500}
     try:
         response = requests.post(GPT5_ENDPOINT, headers=headers, json=payload, timeout=30)
         response.raise_for_status()
@@ -177,16 +211,13 @@ def analyze_image_with_gpt5(image_url, user_question):
         return f"Error: {str(e)[:100]}"
 
 
-def get_gpt5_response(user_message):
+def get_gpt5_response(user_message, chat_history):
     headers = {"Content-Type": "application/json", "api-key": AZURE_API_KEY}
-    payload = {
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_message}
-        ],
-        "temperature": 0.7,
-        "max_tokens": 1500
-    }
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages.extend(chat_history)
+    messages.append({"role": "user", "content": user_message})
+    
+    payload = {"messages": messages, "temperature": 0.7, "max_tokens": 1500}
     try:
         response = requests.post(GPT5_ENDPOINT, headers=headers, json=payload, timeout=25)
         response.raise_for_status()
@@ -247,35 +278,47 @@ class handler(BaseHTTPRequestHandler):
             
             message = data['message']
             chat_id = message['chat']['id']
+            user_id = str(message['from']['id'])
+            message_id = message.get('message_id')
             
-            # Audio
+            chat_history = get_chat_history(chat_id, limit=50)
+            
             if 'voice' in message or 'audio' in message:
                 file_id = message.get('voice', {}).get('file_id') or message.get('audio', {}).get('file_id')
                 audio_url = get_telegram_file_url(file_id)
                 if audio_url:
                     transcription = transcribe_audio(audio_url)
-                    ai_response = get_gpt5_response(f"El colega dice: {transcription}")
+                    save_message(chat_id, user_id, "user", transcription, message_id)
+                    
+                    ai_response = get_gpt5_response(f"El colega dice: {transcription}", chat_history)
+                    save_message(chat_id, user_id, "assistant", ai_response)
+                    
                     audio_response = generate_voice_response(ai_response)
                     if audio_response:
                         send_voice(chat_id, audio_response)
                     else:
                         send_message(chat_id, f"🎤 '{transcription}'\n\n{ai_response}")
             
-            # Foto
             elif 'photo' in message:
                 photo = message['photo'][-1]
                 image_url = get_telegram_file_url(photo['file_id'])
                 user_text = message.get('caption', '¿Qué observas? DDx?')
+                save_message(chat_id, user_id, "user", f"[Imagen enviada] {user_text}", message_id)
+                
                 if image_url:
-                    ai_response = analyze_image_with_gpt5(image_url, user_text)
+                    ai_response = analyze_image_with_gpt5(image_url, user_text, chat_history)
+                    save_message(chat_id, user_id, "assistant", ai_response)
                     send_message(chat_id, f"📸 {ai_response}")
             
-            # Texto
             elif 'text' in message:
                 user_message = message['text']
+                save_message(chat_id, user_id, "user", user_message, message_id)
+                
                 respond_with_voice = "/voz" in user_message.lower()
                 user_message = user_message.replace("/voz", "").replace("/VOZ", "").strip()
-                ai_response = get_gpt5_response(user_message)
+                
+                ai_response = get_gpt5_response(user_message, chat_history)
+                save_message(chat_id, user_id, "assistant", ai_response)
                 
                 if respond_with_voice:
                     audio_response = generate_voice_response(ai_response)
