@@ -1,1 +1,2 @@
-# No external dependencies
+azure-identity>=1.18.0
+azure-ai-openai>=1.0.0
