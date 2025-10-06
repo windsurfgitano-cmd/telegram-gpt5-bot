@@ -679,10 +679,55 @@ def call_azure_gpt_with_audio(audio_b64, user_id):
         print(f"❌ Error: {e}")
         return f"Error: {str(e)}"
 
+
+def convert_ogg_to_wav(ogg_bytes):
+    """Convert OGG audio to WAV format using FFmpeg"""
+    import subprocess
+    import tempfile
+    import os
+
+    try:
+        # Create temp files
+        with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp_ogg:
+            tmp_ogg.write(ogg_bytes)
+            ogg_path = tmp_ogg.name
+
+        wav_path = ogg_path.replace(".ogg", ".wav")
+
+        # Convert with FFmpeg
+        result = subprocess.run([
+            "ffmpeg",
+            "-i", ogg_path,
+            "-ar", "16000",  # 16kHz sample rate (Azure requirement)
+            "-ac", "1",       # Mono (Azure requirement)
+            "-f", "wav",      # WAV format
+            "-y",             # Overwrite
+            wav_path
+        ], capture_output=True, timeout=30)
+
+        if result.returncode != 0:
+            print(f"FFmpeg error: {result.stderr.decode()}")
+            return None
+
+        # Read converted WAV
+        with open(wav_path, "rb") as f:
+            wav_bytes = f.read()
+
+        # Cleanup
+        os.unlink(ogg_path)
+        os.unlink(wav_path)
+
+        return wav_bytes
+
+    except Exception as e:
+        print(f"Error converting audio: {e}")
+        return None
+
+
 def process_voice_message(message, chat_id, user_id):
     """Process voice message from Telegram"""
     try:
-        # 1. Download audio
+        # 1. Download audio from Telegram
         file_id = message["voice"]["file_id"]
         send_telegram_message(chat_id, "🎤 Procesando tu mensaje de voz...")
 
@@ -690,12 +735,19 @@ def process_voice_message(message, chat_id, user_id):
         if not audio_bytes:
             return "❌ Error descargando el audio."
 
-        print(f"📥 Downloaded {len(audio_bytes)} bytes of audio")
+        print(f"📥 Downloaded {len(audio_bytes)} bytes of OGG audio")
 
-        # 2. Convert to base64 (Telegram sends OGG, but let's try direct first)
-        audio_b64 = base64.b64encode(audio_bytes).decode()
+        # 2. Convert OGG to WAV with FFmpeg
+        wav_bytes = convert_ogg_to_wav(audio_bytes)
+        if not wav_bytes:
+            return "❌ Error convirtiendo el audio a WAV."
 
-        # 3. Call Azure GPT-Audio
+        print(f"✅ Converted to {len(wav_bytes)} bytes of WAV")
+
+        # 3. Encode to base64
+        audio_b64 = base64.b64encode(wav_bytes).decode()
+
+        # 4. Call Azure GPT-Audio
         response = call_azure_gpt_with_audio(audio_b64, user_id)
         return response
 
