@@ -608,6 +608,92 @@ def process_intelligent_message(text, chat_id, user_id):
 # ============================================================================
 # MAIN HTTP HANDLER
 # ============================================================================
+
+# ================================================================
+# AUDIO PROCESSING FUNCTIONS (Added for voice message support)
+# ================================================================
+
+def get_telegram_file(file_id):
+    """Get file info from Telegram"""
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile?file_id={file_id}"
+    try:
+        with urlopen(url, timeout=10) as response:
+            return json.loads(response.read())["result"]
+    except Exception as e:
+        print(f"Error getting file: {e}")
+        return None
+
+def download_telegram_audio(file_id):
+    """Download audio file from Telegram"""
+    file_info = get_telegram_file(file_id)
+    if not file_info:
+        return None
+
+    file_path = file_info["file_path"]
+    url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}"
+
+    try:
+        with urlopen(url, timeout=20) as response:
+            return response.read()
+    except Exception as e:
+        print(f"Error downloading audio: {e}")
+        return None
+
+def call_azure_gpt_with_audio(audio_b64, user_id):
+    """Call Azure GPT with audio input (no transcription needed)"""
+    url = f"{AZURE_ENDPOINT}/openai/deployments/{DEPLOYMENT_NAME}/chat/completions?api-version=2025-01-01-preview"
+
+    payload = {
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": [{
+                    "type": "input_audio",
+                    "input_audio": {
+                        "data": audio_b64,
+                        "format": "wav"
+                    }
+                }]
+            }
+        ],
+        "max_tokens": 1000,
+        "temperature": 0.7
+    }
+
+    req = Request(url, data=json.dumps(payload).encode(), headers={
+        "Content-Type": "application/json",
+        "api-key": AZURE_API_KEY
+    })
+
+    try:
+        with urlopen(req, timeout=30) as response:
+            result = json.loads(response.read())
+            return result["choices"][0]["message"]["content"]
+    except Exception as e:
+        return f"Error processing audio: {str(e)}"
+
+def process_voice_message(message, chat_id, user_id):
+    """Process voice message from Telegram"""
+    try:
+        # 1. Download audio
+        file_id = message["voice"]["file_id"]
+        audio_bytes = download_telegram_audio(file_id)
+
+        if not audio_bytes:
+            return "❌ Error descargando el audio."
+
+        # 2. Convert to base64 (Telegram sends OGG, but let's try direct first)
+        audio_b64 = base64.b64encode(audio_bytes).decode()
+
+        # 3. Call Azure GPT-Audio
+        response = call_azure_gpt_with_audio(audio_b64, user_id)
+        return response
+
+    except Exception as e:
+        print(f"Error processing voice: {e}")
+        return f"❌ Error procesando audio: {str(e)}"
+
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         """Health check endpoint"""
@@ -631,6 +717,16 @@ class handler(BaseHTTPRequestHandler):
             update = json.loads(self.rfile.read(content_length).decode('utf-8'))
             
             message = update.get("message") or update.get("edited_message")
+            
+            # Handle voice messages
+            if message.get("voice"):
+                response = process_voice_message(message, chat_id, user_id)
+                if response:
+                    send_telegram_message(chat_id, response)
+                self.send_response(200)
+                self.end_headers()
+                return
+            
             if not message or "text" not in message:
                 self.send_response(200)
                 self.end_headers()
