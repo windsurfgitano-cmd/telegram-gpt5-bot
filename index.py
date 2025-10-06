@@ -715,9 +715,17 @@ class handler(BaseHTTPRequestHandler):
         try:
             content_length = int(self.headers.get("Content-Length", 0))
             update = json.loads(self.rfile.read(content_length).decode('utf-8'))
-            
+
             message = update.get("message") or update.get("edited_message")
-            
+            if not message:
+                self.send_response(200)
+                self.end_headers()
+                return
+
+            # Extract chat_id and user_id FIRST (needed for all message types)
+            chat_id = message["chat"]["id"]
+            user_id = message["from"]["id"]
+
             # Handle voice messages
             if message.get("voice"):
                 response = process_voice_message(message, chat_id, user_id)
@@ -726,16 +734,15 @@ class handler(BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.end_headers()
                 return
-            
-            if not message or "text" not in message:
+
+            # Handle text messages
+            if "text" not in message:
                 self.send_response(200)
                 self.end_headers()
                 return
 
-            chat_id = message["chat"]["id"]
-            user_id = message["from"]["id"]
             text = message["text"]
-            
+
             response = None
             if text.startswith("/"):
                 parts = text.split(" ", 1)
@@ -743,13 +750,13 @@ class handler(BaseHTTPRequestHandler):
                 response = handle_command(command, chat_id, user_id, args)
             else:
                 response = process_intelligent_message(text, chat_id, user_id)
-            
+
             if response:
                 send_telegram_message(chat_id, response)
-                
+
             self.send_response(200)
             self.end_headers()
-            
+
         except Exception as e:
             print(f"FATAL ERROR processing update: {e}")
             import traceback
