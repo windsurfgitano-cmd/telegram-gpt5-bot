@@ -639,75 +639,11 @@ def download_telegram_audio(file_id):
         print(f"Error downloading audio: {e}")
         return None
 
-def call_azure_gpt_with_audio(audio_b64, user_id):
-    """Call Azure GPT with audio input - WITH MODALITIES PARAMETER"""
-    url = f"{AZURE_ENDPOINT}/openai/deployments/{DEPLOYMENT_NAME}/chat/completions?api-version=2025-01-01-preview"
-
-    payload = {
-        "modalities": ["text"],  # ✅ CRITICAL: This is required for Azure GPT-Audio
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": [{
-                    "type": "input_audio",
-                    "input_audio": {
-                        "data": audio_b64,
-                        "format": "wav"
-                    }
-                }]
-            }
-        ],
-        "max_tokens": 1000,
-        "temperature": 0.7
-    }
-
-    req = Request(url, data=json.dumps(payload).encode(), headers={
-        "Content-Type": "application/json",
-        "api-key": AZURE_API_KEY
-    })
-
-    try:
-        with urlopen(req, timeout=30) as response:
-            result = json.loads(response.read())
-            return result["choices"][0]["message"]["content"]
-    except HTTPError as e:
-        error_body = e.read().decode()
-        print(f"❌ Azure API Error {e.code}: {error_body}")
-        return f"Error procesando audio: HTTP {e.code}"
     except Exception as e:
         print(f"❌ Error: {e}")
         return f"Error: {str(e)}"
 
 
-def convert_ogg_to_wav(ogg_bytes):
-    """Convert OGG audio to WAV format using FFmpeg"""
-    import subprocess
-    import tempfile
-    import os
-
-    try:
-        # Create temp files
-        with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp_ogg:
-            tmp_ogg.write(ogg_bytes)
-            ogg_path = tmp_ogg.name
-
-        wav_path = ogg_path.replace(".ogg", ".wav")
-
-        # Convert with FFmpeg
-        result = subprocess.run([
-            "ffmpeg",
-            "-i", ogg_path,
-            "-ar", "16000",  # 16kHz sample rate (Azure requirement)
-            "-ac", "1",       # Mono (Azure requirement)
-            "-f", "wav",      # WAV format
-            "-y",             # Overwrite
-            wav_path
-        ], capture_output=True, timeout=30)
-
-        if result.returncode != 0:
-            print(f"FFmpeg error: {result.stderr.decode()}")
-            return None
 
         # Read converted WAV
         with open(wav_path, "rb") as f:
@@ -724,8 +660,40 @@ def convert_ogg_to_wav(ogg_bytes):
         return None
 
 
+
+
+
+def transcribe_audio_with_whisper(audio_bytes):
+    """Transcribe audio using OpenAI Whisper API (accepts OGG directly)"""
+    import io
+    try:
+        from openai import AzureOpenAI
+
+        # Create client
+        client = AzureOpenAI(
+            azure_endpoint=AZURE_ENDPOINT,
+            api_key=AZURE_API_KEY,
+            api_version="2024-02-01"
+        )
+
+        # Whisper accepts OGG directly, no conversion needed!
+        audio_file = io.BytesIO(audio_bytes)
+        audio_file.name = "audio.ogg"
+
+        # Transcribe
+        transcript = client.audio.transcriptions.create(
+            model="whisper",  # Your Whisper deployment name
+            file=audio_file
+        )
+
+        return transcript.text
+
+    except Exception as e:
+        print(f"Whisper error: {e}")
+        return None
+
 def process_voice_message(message, chat_id, user_id):
-    """Process voice message from Telegram"""
+    """Process voice message from Telegram using Whisper"""
     try:
         # 1. Download audio from Telegram
         file_id = message["voice"]["file_id"]
@@ -737,18 +705,15 @@ def process_voice_message(message, chat_id, user_id):
 
         print(f"📥 Downloaded {len(audio_bytes)} bytes of OGG audio")
 
-        # 2. Convert OGG to WAV with FFmpeg
-        wav_bytes = convert_ogg_to_wav(audio_bytes)
-        if not wav_bytes:
-            return "❌ Error convirtiendo el audio a WAV."
+        # 2. Transcribe with Whisper (accepts OGG directly!)
+        transcription = transcribe_audio_with_whisper(audio_bytes)
+        if not transcription:
+            return "❌ Error transcribiendo el audio."
 
-        print(f"✅ Converted to {len(wav_bytes)} bytes of WAV")
+        print(f"✅ Transcribed: {transcription}")
 
-        # 3. Encode to base64
-        audio_b64 = base64.b64encode(wav_bytes).decode()
-
-        # 4. Call Azure GPT-Audio
-        response = call_azure_gpt_with_audio(audio_b64, user_id)
+        # 3. Process as normal text message with GPT-5
+        response = process_intelligent_message(transcription, chat_id, user_id)
         return response
 
     except Exception as e:
