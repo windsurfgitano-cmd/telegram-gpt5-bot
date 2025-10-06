@@ -2,20 +2,18 @@ from http.server import BaseHTTPRequestHandler
 import json
 import os
 import requests
-from supabase import create_client, Client
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Configuración
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 AZURE_API_KEY = os.getenv("AZURE_API_KEY")
 KONDOR_BASE = "https://kondorcode-resource.cognitiveservices.azure.com/openai/deployments"
 
-# Supabase
-SUPABASE_URL = os.getenv("SUPABASE_URL", "https://mbptdhlmjrcpudcloguc.supabase.co")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1icHRkaGxtanJjcHVkY2xvZ3VjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk3NjU0NjksImV4cCI6MjA3NTM0MTQ2OX0.AwltNL_nJzawy71cBJ7446B-fad_tZFZ_zsim2OTR1c")
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Supabase (REST API directo - sin librería)
+SUPABASE_URL = "https://mbptdhlmjrcpudcloguc.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1icHRkaGxtanJjcHVkY2xvZ3VjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk3NjU0NjksImV4cCI6MjA3NTM0MTQ2OX0.AwltNL_nJzawy71cBJ7446B-fad_tZFZ_zsim2OTR1c"
 
-# Endpoints
+# Endpoints de Azure
 GPT5_ENDPOINT = f"{KONDOR_BASE}/gpt-5-chat/chat/completions?api-version=2025-01-01-preview"
 WHISPER_ENDPOINT = f"{KONDOR_BASE}/whisper/audio/transcriptions?api-version=2024-06-01"
 GPT_AUDIO_ENDPOINT = f"{KONDOR_BASE}/gpt-audio/audio/speech?api-version=2025-01-01-preview"
@@ -49,7 +47,7 @@ CAPACIDADES TÉCNICAS AVANZADAS
 ═══════════════════════════════════════════════════════════════════════
 
 TERMINOLOGÍA MÉDICA QUE DOMINAS:
-• **Síndromes de respuesta sistémica**: SIRS (Síndrome de Respuesta Inflamatoria Sistémica), sepsis, shock séptico, MODS (Multiple Organ Dysfunction Syndrome), DIC (Coagulación Intravascular Diseminada)
+• **Síndromes de respuesta sistémica**: SIRS (Síndrome de Respuesta Inflamoría Sistémica), sepsis, shock séptico, MODS (Multiple Organ Dysfunction Syndrome), DIC (Coagulación Intravascular Diseminada)
 • **Shock**: hipovolémico (clase I-IV), cardiogénico, distributivo (séptico, anafiláctico), obstructivo
 • **Resucitación**: cristaloides (LRS, NaCl 0.9%, Plasma-Lyte), coloides (HES, albúmina), hemoderivados (pRBCs, plasma fresco, crioprecipitado)
 • **Vasopresores e inotrópicos**: norepinefrina, vasopresina, dobutamina, dopamina
@@ -153,10 +151,22 @@ Recuerda: Eres el MEJOR veterinario del infinito. Actúa como tal."""
 
 
 def get_chat_history(chat_id: int, limit: int = 50):
-    """Obtiene los últimos N mensajes del usuario desde Supabase"""
+    """Obtiene últimos N mensajes desde Supabase REST API"""
     try:
-        response = supabase.table('chat_history').select('*').eq('chat_id', chat_id).order('timestamp', desc=True).limit(limit).execute()
-        messages = list(reversed(response.data))
+        url = f"{SUPABASE_URL}/rest/v1/chat_history"
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}"
+        }
+        params = {
+            "chat_id": f"eq.{chat_id}",
+            "order": "timestamp.desc",
+            "limit": limit
+        }
+        
+        response = requests.get(url, headers=headers, params=params, timeout=5)
+        response.raise_for_status()
+        messages = list(reversed(response.json()))
         return [{"role": msg["role"], "content": msg["content"]} for msg in messages]
     except Exception as e:
         print(f"Error fetching history: {e}")
@@ -164,18 +174,29 @@ def get_chat_history(chat_id: int, limit: int = 50):
 
 
 def save_message(chat_id: int, user_id: str, role: str, content: str, message_id: int = None):
-    """Guarda un mensaje en Supabase"""
+    """Guarda mensaje en Supabase REST API"""
     try:
-        supabase.table('chat_history').insert({
+        url = f"{SUPABASE_URL}/rest/v1/chat_history"
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal"
+        }
+        data = {
             "chat_id": chat_id,
             "user_id": user_id,
             "role": role,
             "content": content,
             "message_id": message_id,
-            "timestamp": datetime.utcnow().isoformat()
-        }).execute()
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+        response = requests.post(url, headers=headers, json=data, timeout=5)
+        response.raise_for_status()
+        print(f"✅ Saved: {role} - {content[:50]}...")
     except Exception as e:
-        print(f"Error saving message: {e}")
+        print(f"❌ Error saving: {e}")
 
 
 def transcribe_audio(audio_file_url):
