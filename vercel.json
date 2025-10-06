@@ -4,12 +4,9 @@
     {
       "src": "index.py",
       "use": "@vercel/python"
-    },
-    {
-      "src": "api/webhook.py",
-      "use": "@vercel/python"
     }
   ],
+  "buildCommand": "yum install -y ffmpeg || apt-get update && apt-get install -y ffmpeg",
   "routes": [
     {
       "src": "/(.*)",
